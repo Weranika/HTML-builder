@@ -1,28 +1,68 @@
 const path = require('path');
 const fs = require("fs");
+const util = require("util");
+
 const pathToProjectDist = path.join(__dirname, 'project-dist');
 const pathToAssets = path.join(__dirname, 'assets');
 const pathToAssetsCopy = path.join(__dirname, 'project-dist', 'assets');
+const pathToTemplateHtml = path.join(__dirname, 'template.html');
+const pathToBundle = path.join(__dirname, 'project-dist', 'style.css');
 
-function projectDist() {
-    creatDir(pathToProjectDist);
+const readFile = util.promisify(fs.readFile);
+const writeFile = util.promisify(fs.writeFile);
+const readDir = util.promisify(fs.readdir);
+const copyfile = util.promisify(fs.readdir);
+const makeDir = util.promisify(fs.mkdir);
+
+function main() {
+    createDir(pathToProjectDist);
+    createIndex();
+    createBundle(); 
+    copy(path.join(__dirname, 'assets'), pathToAssetsCopy);
 }
 
-function creatDir(path) {
-    console.log('create dir is called!');
-    fs.mkdir(path, { recursive: true }, (err) => {
-        if (err) {
-            return console.error(err);
-        }
-        console.log(`Directory ${path} created successfully!`);
-    });
+async function createDir(path) {
+    console.log('create dir is called!', path);
+    await makeDir(path, { recursive: true });
+
+    console.log(`Directory ${path} created successfully!`);
+
 }
 
-function copyAssetsDir() {
+async function createIndex() {
+    let indexHtml = await readFile(pathToTemplateHtml, 'utf-8');
+    let startInd = indexHtml.indexOf('{{');
+    while (startInd > 0) {
+        const finishInd = indexHtml.indexOf('}}', startInd);
+        const tagName = indexHtml.substring(startInd+2, finishInd);
+        console.log(tagName);
+
+        const pathToComponent = path.join(__dirname, 'components', tagName + '.html' );
+        const componentContent = await readFile(pathToComponent, 'utf-8');
+        indexHtml = indexHtml.replace(`{{${tagName}}}`, componentContent);
+        startInd = indexHtml.indexOf('{{', finishInd);        
+    }
+    await writeFile(path.join(__dirname, 'project-dist', 'index.html'), indexHtml);
+}
+
+async function createBundle() {
+    let dirs = await readDir(path.join(__dirname, 'styles'),  {withFileTypes: true}); 
+    const files = dirs.map(direntFile => direntFile.name)
+    .filter(filename => filename.includes('css'))
+    .map(filename => readFile(path.join(__dirname, 'styles', filename)));
+
+    const filesContentsArr = await Promise.all(files);
+
+    const bundle = fs.createWriteStream(pathToBundle);
+    bundle.write(filesContentsArr.join('\n'));
+    bundle.end();
+}
+
+function copyAssetsDir(pathToAssetsCopy) {
     fs.access(pathToAssetsCopy, fs.F_OK, (err) => {
         if (err) {
             console.log('does not exist');
-            creatDir(pathToAssetsCopy);            
+            createDir(pathToAssetsCopy);            
         }
 
         fs.readdir(pathToAssetsCopy, (err, files) => {
@@ -36,37 +76,37 @@ function copyAssetsDir() {
     
                 fs.unlink(path.join(pathToAssetsCopy, `${file}`), (err => {
                     if (err) 
-                        console.log(`delet ${file}`);
+                        console.log(`delete ${file}`);
                 }));
             })
         })
-
         copy(); 
     })    
 }
 
-function copy() {
-    console.log('copy function is called')
-    fs.readdir(pathToAssets, (err, files) => {
-        if (err) throw err;
+async function copy(from, to) {
+    console.log('copy function is called', from, to);
+    const filesInDir = await readDir(from);
 
-        files.forEach((file) => {
-            console.log(1)
-            if (!path.extname(file)) {
-                return;
-            }
-            
-            fs.copyFile(path.join(pathToAssets, `${file}`), path.join(pathToAssetsCopy, `${file}`), err => {
-                console.log(2)
-                if (err) {
-                    console.error(err);
-                }   
-                console.log(`copied ${file} sucsees`);
-            });
+    for (let i = 0; i < filesInDir.length; i++){
+        const file = filesInDir[i];
+        if (!path.extname(file)){
+            console.log("creation directory ",file)
+            await createDir(path.join(to, file));
+            copy(path.join(from, file), path.join(to, file));
+            continue;
+        }
+
+        console.log('copying file', from, file);       
+        path.dirname
+        fs.copyFile(path.join(from, file), path.join(to, file), err => 
+        {
+            if (err) {
+                console.error(err);
+            }   
+            console.log(`copied ${file} sucsees`);
         });
-    });
+    }
 }
 
-
-projectDist();
-copyAssetsDir();
+main();
