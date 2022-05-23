@@ -1,19 +1,29 @@
 const path = require('path');
 const fs = require("fs");
+const util = require('util');
 const pathToFile = path.join(__dirname, 'secret-folder');
+const fileNamesArr = [];
 
-fs.readdir(pathToFile, {withFileTypes: true}, (err, files) => {
-    if (err) throw err;
+const stat = util.promisify(fs.stat);
+const readdir = util.promisify(fs.readdir);
 
-    files.filter(file => !file.isDirectory())
-    .map(file => {
-        const pathToFile = path.join(__dirname, 'secret-folder', `${file.name}`);
-        const stats = fs.statSync(pathToFile);
-        const  fileSizeInKb = stats.size / 1024;
-        const fileName = file.name.split('.').join(' - ');
+async function statOfFolder() {
+    const files = await readdir(pathToFile, {withFileTypes: true});
+
+    const filteredFiles = files.filter(file => !file.isDirectory()).map(dirrent => dirrent.name)
+                            .map(filename => {
+                                fileNamesArr.push(filename);
+                                return path.join(__dirname, 'secret-folder', filename);
+                                })
+                            .map(path => stat(path));
+
+    const statistics = await Promise.all(filteredFiles);
+    for (let i = 0; i < statistics.length; i++) {
+        const  fileSizeInKb = statistics[i].size / 1024;
+        const fileName = fileNamesArr[i].split('.').join(' - ');
         const finalStr = fileName + ' - ' + fileSizeInKb + 'kb';
-        return finalStr;
-    })
-    .forEach(finalStr => console.log(finalStr))
-    });
+        console.log(finalStr);
+    }
+}
 
+statOfFolder();
